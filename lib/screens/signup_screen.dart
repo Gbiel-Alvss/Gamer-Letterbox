@@ -1,272 +1,403 @@
-import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+// ===========================
+// SIGNUP SCREEN COMPLETA
+// lib/screens/signup_screen.dart
+// ===========================
 
+import 'dart:convert';
+
+import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+
+import '../services/api_service.dart';
 import 'login_screen.dart';
-import 'main_screen.dart';
 
 class SignupScreen extends StatefulWidget {
-  const SignupScreen({Key? key}) : super(key: key);
+  const SignupScreen({super.key});
 
   @override
   State<SignupScreen> createState() => _SignupScreenState();
 }
 
 class _SignupScreenState extends State<SignupScreen> {
-  final TextEditingController _emailController = TextEditingController();
-  final TextEditingController _senhaController = TextEditingController();
-  final TextEditingController _confirmController = TextEditingController();
 
-  bool _loading = false;
-  String? _error;
+  final usernameController = TextEditingController();
 
-  Future<void> _signup() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+  final emailController = TextEditingController();
 
-    final email = _emailController.text.trim();
-    final senha = _senhaController.text.trim();
-    final confirmacao = _confirmController.text.trim();
+  final passwordController = TextEditingController();
 
-    if (email.isEmpty || senha.isEmpty || confirmacao.isEmpty) {
-      setState(() {
-        _error = 'Preencha todos os campos';
-        _loading = false;
-      });
+  final confirmPasswordController = TextEditingController();
+
+  bool loading = false;
+
+  Future<void> register() async {
+
+    final username =
+        usernameController.text.trim();
+
+    final email =
+        emailController.text.trim();
+
+    final password =
+        passwordController.text.trim();
+
+    final confirm =
+        confirmPasswordController.text.trim();
+
+    if (username.isEmpty ||
+        email.isEmpty ||
+        password.isEmpty ||
+        confirm.isEmpty) {
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Preencha todos os campos',
+          ),
+        ),
+      );
+
       return;
     }
 
-    if (senha != confirmacao) {
-      setState(() {
-        _error = 'As senhas não conferem';
-        _loading = false;
-      });
+    if (password != confirm) {
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'As senhas não coincidem',
+          ),
+        ),
+      );
+
       return;
     }
 
     try {
-      final response = await Supabase.instance.client.auth.signUp(
-        email: email,
-        password: senha,
+
+      setState(() {
+        loading = true;
+      });
+
+      final response = await http.post(
+
+        Uri.parse(
+          '${ApiService.baseUrl}/register',
+        ),
+
+        headers: {
+          'Content-Type': 'application/json',
+        },
+
+        body: jsonEncode({
+
+          'username': username,
+          'email': email,
+          'password': password,
+
+        }),
       );
 
-      final user = response.user;
+      final data =
+          jsonDecode(response.body);
 
-      if (user != null) {
-        // Cria perfil básico no banco
-        await Supabase.instance.client.from('profiles').upsert({
-          'id': user.id,
-          'username': email.split('@').first,
-        });
+      if (data['success']) {
 
-        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Conta criada com sucesso!',
+            ),
+          ),
+        );
 
-        // Se confirmação de e-mail estiver habilitada
-        if (user.emailConfirmedAt == null) {
-          setState(() {
-            _error = 'Cadastro criado! Verifique seu e-mail para confirmar a conta.';
-          });
-        } else {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (context) => const MainScreen()),
-          );
-        }
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => const LoginScreen(),
+          ),
+        );
+
       } else {
-        setState(() {
-          _error = 'Não foi possível criar a conta. Tente novamente.';
-        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              data['message'],
+            ),
+          ),
+        );
       }
-    } on AuthException catch (e) {
-      setState(() {
-        _error = e.message;
-      });
+
     } catch (e) {
-      setState(() {
-        _error = 'Erro inesperado: $e';
-      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            e.toString(),
+          ),
+        ),
+      );
+
     } finally {
-      if (mounted) {
-        setState(() {
-          _loading = false;
-        });
-      }
+
+      setState(() {
+        loading = false;
+      });
     }
   }
 
   @override
-  void dispose() {
-    _emailController.dispose();
-    _senhaController.dispose();
-    _confirmController.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
+
     return Scaffold(
-      backgroundColor: Colors.black,
-      body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24.0),
-              child: Column(
-                children: [
-                  const SizedBox(height: 24),
-                  const Text(
-                    'PLAYBOXED',
-                    style: TextStyle(
-                      color: Color(0xFF39FF14),
-                      fontWeight: FontWeight.bold,
-                      fontSize: 28,
-                      letterSpacing: 2,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  const Icon(
-                    Icons.sports_esports,
-                    color: Color(0xFF39FF14),
-                    size: 80,
-                  ),
-                  const SizedBox(height: 32),
-                  const Text(
-                    'Criar uma conta',
-                    style: TextStyle(
-                      color: Color(0xFF39FF14),
-                      fontWeight: FontWeight.bold,
-                      fontSize: 24,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'Insira seu e-mail para se\ncadastrar neste aplicativo',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: Colors.greenAccent,
-                      fontSize: 16,
-                    ),
-                  ),
-                  const SizedBox(height: 32),
-                  TextField(
-                    controller: _emailController,
-                    style: const TextStyle(color: Colors.black),
-                    decoration: InputDecoration(
-                      hintText: 'E-mail',
-                      filled: true,
-                      fillColor: Colors.white,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide: BorderSide.none,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: _senhaController,
-                    obscureText: true,
-                    style: const TextStyle(color: Colors.black),
-                    decoration: InputDecoration(
-                      hintText: 'Senha',
-                      filled: true,
-                      fillColor: Colors.white,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide: BorderSide.none,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: _confirmController,
-                    obscureText: true,
-                    style: const TextStyle(color: Colors.black),
-                    decoration: InputDecoration(
-                      hintText: 'Confirmar senha...',
-                      filled: true,
-                      fillColor: Colors.white,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide: BorderSide.none,
-                      ),
-                    ),
-                  ),
-                  if (_error != null)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      child: Text(
-                        _error!,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(color: Colors.red),
-                      ),
-                    ),
-                  const SizedBox(height: 24),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.white,
-                        foregroundColor: const Color(0xFF39FF14),
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        elevation: 0,
-                      ),
-                      onPressed: _loading ? null : _signup,
-                      child: _loading
-                          ? const SizedBox(
-                              height: 22,
-                              width: 22,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Color(0xFF39FF14),
-                              ),
-                            )
-                          : const Text(
-                              'Continuar',
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 16,
-                              ),
-                            ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  TextButton(
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const LoginScreen(),
-                        ),
-                      );
-                    },
-                    child: const Text(
-                      'Já tenho login',
-                      style: TextStyle(
-                        color: Color(0xFF39FF14),
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 32),
-                  const Text(
-                    'Ao clicar em continuar, você concorda com os nossos\nTermos de Serviço e com a Política de Privacidade',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: Colors.white70,
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
+
+      backgroundColor: const Color(0xFF020817),
+
+      body: Center(
+
+        child: SingleChildScrollView(
+
+          padding: const EdgeInsets.all(24),
+
+          child: Container(
+
+            width: 420,
+
+            padding: const EdgeInsets.all(24),
+
+            decoration: BoxDecoration(
+
+              color: Colors.black.withOpacity(0.88),
+
+              borderRadius: BorderRadius.circular(24),
+
+              border: Border.all(
+                color: Colors.white10,
               ),
+            ),
+
+            child: Column(
+
+              crossAxisAlignment:
+                  CrossAxisAlignment.start,
+
+              children: [
+
+                const Text(
+
+                  'Create Account',
+
+                  style: TextStyle(
+
+                    color: Colors.white,
+
+                    fontSize: 36,
+
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+
+                const SizedBox(height: 8),
+
+                Text(
+
+                  'Join the next generation of social gaming.',
+
+                  style: TextStyle(
+                    color: Colors.white70,
+                    fontSize: 16,
+                  ),
+                ),
+
+                const SizedBox(height: 32),
+
+                buildInput(
+                  'USERNAME',
+                  usernameController,
+                  Icons.person_outline,
+                ),
+
+                const SizedBox(height: 20),
+
+                buildInput(
+                  'EMAIL ADDRESS',
+                  emailController,
+                  Icons.email_outlined,
+                ),
+
+                const SizedBox(height: 20),
+
+                buildInput(
+                  'PASSWORD',
+                  passwordController,
+                  Icons.lock_outline,
+                  obscure: true,
+                ),
+
+                const SizedBox(height: 20),
+
+                buildInput(
+                  'CONFIRM PASSWORD',
+                  confirmPasswordController,
+                  Icons.shield_outlined,
+                  obscure: true,
+                ),
+
+                const SizedBox(height: 32),
+
+                SizedBox(
+
+                  width: double.infinity,
+
+                  height: 58,
+
+                  child: ElevatedButton(
+
+                    onPressed:
+                        loading ? null : register,
+
+                    style: ElevatedButton.styleFrom(
+
+                      backgroundColor:
+                          const Color(0xFF39FF14),
+
+                      foregroundColor: Colors.black,
+
+                      shape: RoundedRectangleBorder(
+
+                        borderRadius:
+                            BorderRadius.circular(14),
+                      ),
+                    ),
+
+                    child: loading
+
+                        ? const CircularProgressIndicator(
+                            color: Colors.black,
+                          )
+
+                        : const Text(
+
+                            'REGISTER NOW',
+
+                            style: TextStyle(
+
+                              fontWeight:
+                                  FontWeight.bold,
+
+                              fontSize: 16,
+                            ),
+                          ),
+                  ),
+                ),
+              ],
             ),
           ),
         ),
       ),
+    );
+  }
+
+  Widget buildInput(
+
+    String label,
+
+    TextEditingController controller,
+
+    IconData icon, {
+
+    bool obscure = false,
+
+  }) {
+
+    return Column(
+
+      crossAxisAlignment:
+          CrossAxisAlignment.start,
+
+      children: [
+
+        Text(
+
+          label,
+
+          style: TextStyle(
+
+            color: Colors.white.withOpacity(0.75),
+
+            fontSize: 13,
+
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+
+        const SizedBox(height: 8),
+
+        TextField(
+
+          controller: controller,
+
+          obscureText: obscure,
+
+          style: const TextStyle(
+            color: Colors.white,
+          ),
+
+          decoration: InputDecoration(
+
+            hintText: label,
+
+            hintStyle: const TextStyle(
+              color: Colors.white38,
+            ),
+
+            prefixIcon: Icon(
+              icon,
+              color: Colors.white54,
+            ),
+
+            filled: true,
+
+            fillColor: const Color(0xFF081225),
+
+            contentPadding:
+                const EdgeInsets.symmetric(
+              vertical: 18,
+              horizontal: 16,
+            ),
+
+            border: OutlineInputBorder(
+
+              borderRadius:
+                  BorderRadius.circular(12),
+
+              borderSide: BorderSide.none,
+            ),
+
+            enabledBorder: OutlineInputBorder(
+
+              borderRadius:
+                  BorderRadius.circular(12),
+
+              borderSide: BorderSide(
+                color: Colors.white10,
+              ),
+            ),
+
+            focusedBorder: OutlineInputBorder(
+
+              borderRadius:
+                  BorderRadius.circular(12),
+
+              borderSide: const BorderSide(
+                color: Color(0xFF39FF14),
+                width: 1.5,
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

@@ -1,30 +1,128 @@
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import 'screens/home_screen.dart';
+import 'screens/library_screen.dart';
 import 'screens/login_screen.dart';
-import 'screens/signup_screen.dart';
-import 'screens/main_screen.dart';
+import 'screens/profile_screen.dart';
+import 'widgets/navigation/bottom_navbar.dart';
+import 'services/app_settings.dart';
 
-Future<void> main() async {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
-  await Supabase.initialize(
-    url: 'https://mlnjdtymmkshchybwsbe.supabase.co',
-    anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1sbmpkdHltbWtzaGNoeWJ3c2JlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM0NjAwOTksImV4cCI6MjA4OTAzNjA5OX0.CwNKlWZx2ICQVoT9PC3Fu9JsfDkvNjLitCMpuH52BnQ',
-  );
-
-  runApp(const MyApp());
+  await AppSettings().load();
+  runApp(MyApp());
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  MyApp({super.key});
+
+  final _settings = AppSettings();
+
+  Future<bool> checkLogin() async {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('token');
+    return token != null;
+  }
 
   @override
   Widget build(BuildContext context) {
-    final session = Supabase.instance.client.auth.currentSession;
+    return ListenableBuilder(
+      listenable: _settings,
+      builder: (context, _) {
+        final isHighContrast = _settings.highContrast;
+        final colorScheme = ColorScheme.fromSeed(
+          seedColor: _settings.accentColor,
+          brightness: isHighContrast ? Brightness.light : Brightness.dark,
+          background: _settings.bgColor,
+          surface: _settings.cardColor,
+          onBackground: _settings.textColor,
+          onSurface: _settings.textColor,
+          onPrimary: _settings.accentTextColor,
+        );
 
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      home: session == null ? const LoginScreen() : const MainScreen(),
+        return MaterialApp(
+          debugShowCheckedModeBanner: false,
+          theme: ThemeData(
+            colorScheme: colorScheme,
+            scaffoldBackgroundColor: _settings.bgColor,
+            cardColor: _settings.cardColor,
+            textTheme: ThemeData(brightness: isHighContrast ? Brightness.light : Brightness.dark)
+                .textTheme
+                .apply(
+                  bodyColor: _settings.textColor,
+                  displayColor: _settings.textColor,
+                ),
+            iconTheme: IconThemeData(color: _settings.textColor),
+            useMaterial3: true,
+          ),
+          home: FutureBuilder<bool>(
+            future: checkLogin(),
+            builder: (context, snapshot) {
+              if (!snapshot.hasData) {
+                return const Scaffold(
+                  backgroundColor: Color(0xFF020817),
+                  body: Center(
+                    child: CircularProgressIndicator(
+                      color: Color(0xFF39FF14),
+                    ),
+                  ),
+                );
+              }
+
+              final logged = snapshot.data!;
+
+              if (logged) {
+                return const AppShell();
+              } else {
+                return const LoginScreen();
+              }
+            },
+          ),
+        );
+      },
+    );
+  }
+}
+
+class AppShell extends StatefulWidget {
+  const AppShell({super.key});
+
+  @override
+  State<AppShell> createState() => _AppShellState();
+}
+
+class _AppShellState extends State<AppShell> {
+  int _currentIndex = 0;
+  final _libraryKey = GlobalKey<LibraryScreenState>();
+  final _profileKey = GlobalKey<ProfileScreenState>();
+  final _settings = AppSettings();
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: _settings,
+      builder: (context, _) {
+        return Scaffold(
+          backgroundColor: _settings.bgColor,
+          body: IndexedStack(
+            index: _currentIndex,
+            children: [
+              const MainScreen(),
+              LibraryScreen(key: _libraryKey),
+              ProfileScreen(key: _profileKey),
+            ],
+          ),
+          bottomNavigationBar: BottomNavbar(
+            currentIndex: _currentIndex,
+            onTap: (index) {
+              if (index == 1) _libraryKey.currentState?.loadLibrary();
+              if (index == 2) _profileKey.currentState?.loadProfile();
+              setState(() => _currentIndex = index);
+            },
+          ),
+        );
+      },
     );
   }
 }

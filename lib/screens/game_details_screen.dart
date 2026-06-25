@@ -1,520 +1,383 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:http/http.dart' as http;
+
+import '../services/api_service.dart';
+import '../services/app_settings.dart';
+import '../widgets/game_details_header.dart';
+import '../widgets/review_card_large.dart';
+import '../screens/write_review_screen.dart';
 
 class GameDetailsScreen extends StatefulWidget {
-  final int gameId;
-  final String gameTitle;
+
+  final dynamic game;
+
   final String imageUrl;
 
   const GameDetailsScreen({
-    Key? key,
-    required this.gameId,
-    required this.gameTitle,
+
+    super.key,
+
+    required this.game,
+
     required this.imageUrl,
-  }) : super(key: key);
+  });
 
   @override
   State<GameDetailsScreen> createState() => _GameDetailsScreenState();
 }
 
 class _GameDetailsScreenState extends State<GameDetailsScreen> {
-  final supabase = Supabase.instance.client;
+  final _settings = AppSettings();
 
+  List<Map<String, dynamic>> _reviews = [];
   bool _loadingReviews = true;
-  bool _savingAction = false;
-
-  List<Map<String, dynamic>> _communityReviews = [];
-  Map<String, String> _usernamesById = {};
 
   @override
   void initState() {
     super.initState();
-    fetchCommunityReviews();
+    _loadReviews();
   }
 
-  Future<void> fetchCommunityReviews() async {
-    setState(() {
-      _loadingReviews = true;
-    });
-
+  Future<void> _loadReviews() async {
     try {
-      final reviewsResponse = await supabase
-          .from('reviews')
-          .select()
-          .eq('igdb_game_id', widget.gameId)
-          .order('created_at', ascending: false);
-
-      final reviews =
-          List<Map<String, dynamic>>.from(reviewsResponse);
-
-      final userIds = reviews
-          .map((review) => review['user_id']?.toString())
-          .where((id) => id != null && id.isNotEmpty)
-          .cast<String>()
-          .toSet()
-          .toList();
-
-      Map<String, String> usernames = {};
-
-      if (userIds.isNotEmpty) {
-        final profilesResponse = await supabase
-            .from('profiles')
-            .select('id, username')
-            .inFilter('id', userIds);
-
-        for (final item in profilesResponse) {
-          final map = Map<String, dynamic>.from(item);
-          usernames[map['id'].toString()] =
-              (map['username'] ?? 'usuário').toString();
-        }
-      }
-
-      if (!mounted) return;
-
+      final gameId = widget.game['id'].toString();
+      final res = await http.get(
+        Uri.parse('${ApiService.baseUrl}/reviews/$gameId'),
+      );
+      final data = jsonDecode(res.body);
       setState(() {
-        _communityReviews = reviews;
-        _usernamesById = usernames;
+        _reviews = data['success']
+            ? List<Map<String, dynamic>>.from(data['data'])
+            : [];
+        _loadingReviews = false;
       });
     } catch (e) {
-      debugPrint('ERRO COMMUNITY REVIEWS: $e');
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erro ao buscar reviews: $e')),
-      );
-    } finally {
-      if (mounted) {
-        setState(() {
-          _loadingReviews = false;
-        });
-      }
+      setState(() => _loadingReviews = false);
     }
   }
 
-  Future<void> addGameToLibrary(String status) async {
-    final user = supabase.auth.currentUser;
-
-    if (user == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Você precisa estar logado.')),
-      );
-      return;
-    }
-
-    setState(() {
-      _savingAction = true;
-    });
-
-    try {
-      await supabase.from('user_games').upsert(
-        {
-          'user_id': user.id,
-          'igdb_game_id': widget.gameId,
-          'status': status,
-          'game_name': widget.gameTitle,
-          'image_url': widget.imageUrl,
-        },
-        onConflict: 'user_id,igdb_game_id',
-      );
-
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            status == 'playing'
-                ? 'Jogo adicionado em Jogando agora!'
-                : 'Jogo adicionado ao backlog!',
-          ),
-        ),
-      );
-    } catch (e) {
-      debugPrint('ERRO ADD GAME DETAILS: $e');
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erro ao salvar jogo: $e')),
-      );
-    } finally {
-      if (mounted) {
-        setState(() {
-          _savingAction = false;
-        });
-      }
-    }
+  String _timeAgo(String? createdAt) {
+    if (createdAt == null) return '';
+    final date = DateTime.tryParse(createdAt);
+    if (date == null) return '';
+    final diff = DateTime.now().difference(date);
+    if (diff.inMinutes < 1) return 'just now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes} minutes ago';
+    if (diff.inHours < 24) return '${diff.inHours} hours ago';
+    if (diff.inDays < 30) return '${diff.inDays} days ago';
+    return '${(diff.inDays / 30).floor()} months ago';
   }
 
-  Future<void> saveReview({
-    required int stars,
-    required String reviewText,
-  }) async {
-    final user = supabase.auth.currentUser;
-
-    if (user == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Você precisa estar logado.')),
-      );
-      return;
-    }
-
-    setState(() {
-      _savingAction = true;
-    });
-
-    try {
-      await supabase.from('reviews').upsert(
-        {
-          'user_id': user.id,
-          'igdb_game_id': widget.gameId,
-          'title': widget.gameTitle,
-          'body': reviewText,
-          'rating': stars.toDouble(),
-        },
-        onConflict: 'user_id,igdb_game_id',
-      );
-
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Review salvo com sucesso!')),
-      );
-
-      await fetchCommunityReviews();
-    } catch (e) {
-      debugPrint('ERRO SAVE REVIEW DETAILS: $e');
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erro ao salvar review: $e')),
-      );
-    } finally {
-      if (mounted) {
-        setState(() {
-          _savingAction = false;
-        });
-      }
-    }
-  }
-
-  void openReviewDialog() {
-    final TextEditingController reviewController = TextEditingController();
-    final ValueNotifier<int> starsNotifier = ValueNotifier<int>(0);
-
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          backgroundColor: Colors.grey[900],
-          title: Text(
-            'Review de ${widget.gameTitle}',
-            style: const TextStyle(color: Color(0xFF39FF14)),
-          ),
-          content: SingleChildScrollView(
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: _settings,
+      builder: (context, _) {
+        return Scaffold(
+          backgroundColor: _settings.bgColor,
+          body: SingleChildScrollView(
             child: Column(
-              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (widget.imageUrl.isNotEmpty)
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: SizedBox(
-                      width: 100,
-                      height: 150,
-                      child: Image.network(
-                        widget.imageUrl,
-                        fit: BoxFit.cover,
-                      ),
-                    ),
-                  ),
-                const SizedBox(height: 12),
-                ValueListenableBuilder<int>(
-                  valueListenable: starsNotifier,
-                  builder: (context, stars, _) {
-                    return Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: List.generate(5, (i) {
-                        return IconButton(
-                          icon: Icon(
-                            i < stars ? Icons.star : Icons.star_border,
-                            color: const Color(0xFF39FF14),
-                          ),
-                          onPressed: () {
-                            starsNotifier.value = i + 1;
-                          },
-                        );
-                      }),
-                    );
-                  },
+                GameDetailsHeader(
+                  game: widget.game,
+                  imageUrl: widget.imageUrl,
+                  onReviewSubmitted: _loadReviews,
                 ),
-                TextField(
-                  controller: reviewController,
-                  maxLines: 4,
-                  style: const TextStyle(color: Colors.white),
-                  decoration: const InputDecoration(
-                    hintText: 'Escreva seu review...',
-                    hintStyle: TextStyle(color: Colors.white70),
-                    filled: true,
-                    fillColor: Colors.black,
-                    border: OutlineInputBorder(),
+                Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      buildAboutSection(),
+                      const SizedBox(height: 32),
+                      buildReviewsHeader(),
+                      const SizedBox(height: 20),
+                      buildReviews(),
+                      const SizedBox(height: 32),
+                      buildFriendsPlaying(),
+                      const SizedBox(height: 120),
+                    ],
                   ),
                 ),
               ],
             ),
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text(
-                'Cancelar',
-                style: TextStyle(color: Colors.white70),
-              ),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF39FF14),
-              ),
-              onPressed: () async {
-                if (starsNotifier.value == 0 ||
-                    reviewController.text.trim().isEmpty) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Selecione estrelas e escreva o review.'),
-                    ),
-                  );
-                  return;
-                }
-
-                Navigator.pop(context);
-
-                await saveReview(
-                  stars: starsNotifier.value,
-                  reviewText: reviewController.text.trim(),
-                );
-              },
-              child: const Text(
-                'Salvar',
-                style: TextStyle(color: Colors.black),
-              ),
-            ),
-          ],
         );
       },
     );
   }
 
-  String formatDate(dynamic rawDate) {
-    if (rawDate == null) return '';
-    try {
-      final date = DateTime.parse(rawDate.toString()).toLocal();
-      final day = date.day.toString().padLeft(2, '0');
-      final month = date.month.toString().padLeft(2, '0');
-      final year = date.year.toString();
-      return '$day/$month/$year';
-    } catch (_) {
-      return '';
-    }
-  }
-
-  Widget buildActionButton({
-    required IconData icon,
-    required String label,
-    required VoidCallback onTap,
-  }) {
-    return Expanded(
-      child: ElevatedButton.icon(
-        style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xFF39FF14),
-          foregroundColor: Colors.black,
-          padding: const EdgeInsets.symmetric(vertical: 14),
-        ),
-        onPressed: _savingAction ? null : onTap,
-        icon: Icon(icon),
-        label: Text(
-          label,
-          textAlign: TextAlign.center,
-        ),
+  Widget buildAboutSection() {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: _settings.cardColor,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: _settings.borderColor),
       ),
-    );
-  }
 
-  Widget buildReviewCard(Map<String, dynamic> review) {
-    final rating = ((review['rating'] ?? 0) as num).toInt();
-    final userId = review['user_id']?.toString() ?? '';
-    final username = _usernamesById[userId] ?? 'usuário';
-    final createdAt = formatDate(review['created_at']);
+      child: Column(
 
-    return Card(
-      color: Colors.grey[900],
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '@$username',
-              style: const TextStyle(
-                color: Color(0xFF39FF14),
-                fontWeight: FontWeight.bold,
-                fontSize: 15,
-              ),
+        crossAxisAlignment: CrossAxisAlignment.start,
+
+        children: [
+
+          Text(
+            'About',
+            style: TextStyle(
+              color: _settings.accentColor,
+              fontSize: 28,
+              fontWeight: FontWeight.bold,
             ),
-            if (createdAt.isNotEmpty) ...[
-              const SizedBox(height: 4),
-              Text(
-                createdAt,
-                style: const TextStyle(color: Colors.white54, fontSize: 12),
+          ),
+
+          const SizedBox(height: 18),
+
+          Text(
+            widget.game['summary'] ?? 'No description.',
+            style: TextStyle(
+              color: _settings.textColor.withOpacity(0.9),
+              height: 1.7,
+            ),
+          ),
+
+          const SizedBox(height: 24),
+
+          Divider(color: _settings.borderColor.withOpacity(0.4)),
+
+          const SizedBox(height: 20),
+
+          Row(
+
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+
+            children: [
+
+              Column(
+
+                crossAxisAlignment: CrossAxisAlignment.start,
+
+                children: [
+
+                  Text(
+                    'GENRE',
+                    style: TextStyle(color: _settings.mutedColor),
+                  ),
+
+                  const SizedBox(height: 8),
+
+                  Text(
+                    _getGenre(),
+                    style: TextStyle(color: _settings.textColor),
+                  ),
+                ],
+              ),
+
+              Column(
+
+                crossAxisAlignment: CrossAxisAlignment.start,
+
+                children: [
+
+                  Text(
+                    'RATING',
+                    style: TextStyle(color: _settings.mutedColor),
+                  ),
+
+                  const SizedBox(height: 8),
+
+                  Text(
+                    widget.game['rating'] != null
+                        ? '⭐ ${(widget.game['rating'] as num).toStringAsFixed(1)}'
+                        : 'N/A',
+                    style: TextStyle(color: _settings.textColor),
+                  ),
+                ],
               ),
             ],
-            const SizedBox(height: 8),
-            Row(
-              children: List.generate(
-                rating,
-                (i) => const Icon(
-                  Icons.star,
-                  color: Color(0xFF39FF14),
-                  size: 18,
-                ),
-              ),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              (review['body'] ?? '').toString(),
-              style: const TextStyle(
-                color: Colors.white70,
-                fontSize: 14,
-                height: 1.35,
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final averageRating = _communityReviews.isEmpty
-        ? null
-        : _communityReviews
-                .map((e) => (e['rating'] ?? 0) as num)
-                .reduce((a, b) => a + b) /
-            _communityReviews.length;
+  String _getGenre() {
+    final genres = widget.game['genres'] as List?;
+    if (genres == null || genres.isEmpty) return 'N/A';
+    return genres.map((g) => g['name']).join(', ');
+  }
 
-    return Scaffold(
-      backgroundColor: Colors.black,
-      appBar: AppBar(
-        backgroundColor: Colors.black,
-        foregroundColor: const Color(0xFF39FF14),
-        elevation: 0,
-        title: const Text('Detalhes do jogo'),
-      ),
-      body: ListView(
-        children: [
-          const SizedBox(height: 12),
-          Center(
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(14),
-              child: SizedBox(
-                width: 180,
-                height: 260,
-                child: widget.imageUrl.isNotEmpty
-                    ? Image.network(
-                        widget.imageUrl,
-                        fit: BoxFit.cover,
-                      )
-                    : Container(
-                        color: Colors.grey[900],
-                        child: const Icon(
-                          Icons.videogame_asset,
-                          color: Colors.white54,
-                          size: 48,
-                        ),
-                      ),
-              ),
+  Widget buildReviewsHeader() {
+    return Row(
+
+      crossAxisAlignment: CrossAxisAlignment.center,
+
+      children: [
+
+        Expanded(
+          child: Text(
+            'Community Reviews',
+            style: TextStyle(
+              color: _settings.textColor,
+              fontSize: 28,
+              fontWeight: FontWeight.bold,
             ),
           ),
-          const SizedBox(height: 16),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Text(
-              widget.gameTitle,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: Color(0xFF39FF14),
-                fontWeight: FontWeight.bold,
-                fontSize: 24,
-              ),
-            ),
-          ),
-          if (averageRating != null) ...[
-            const SizedBox(height: 8),
-            Center(
-              child: Text(
-                'Média da comunidade: ${averageRating.toStringAsFixed(1)} ★',
-                style: const TextStyle(color: Colors.white70, fontSize: 15),
-              ),
-            ),
-          ],
-          const SizedBox(height: 18),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-              children: [
-                buildActionButton(
-                  icon: Icons.play_arrow,
-                  label: 'Jogando agora',
-                  onTap: () => addGameToLibrary('playing'),
+        ),
+
+        const SizedBox(width: 12),
+
+        GestureDetector(
+
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => WriteReviewScreen(
+                  game: widget.game,
+                  imageUrl: widget.imageUrl,
                 ),
-                const SizedBox(width: 10),
-                buildActionButton(
-                  icon: Icons.bookmark,
-                  label: 'Backlog',
-                  onTap: () => addGameToLibrary('backlog'),
+              ),
+            ).then((submitted) {
+              if (submitted == true) _loadReviews();
+            });
+          },
+
+          child: Container(
+
+            padding: const EdgeInsets.symmetric(
+              horizontal: 14,
+              vertical: 8,
+            ),
+
+            decoration: BoxDecoration(
+              color: _settings.accentColor.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: _settings.accentColor.withOpacity(0.4),
+              ),
+            ),
+
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.edit_outlined,
+                  color: _settings.accentColor,
+                  size: 16,
+                ),
+
+                SizedBox(width: 6),
+
+                Text(
+                  'Write Review',
+                  style: TextStyle(
+                    color: _settings.accentColor,
+
+                    fontWeight: FontWeight.bold,
+
+                    fontSize: 13,
+                  ),
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 10),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.white,
-                foregroundColor: Colors.black,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-              ),
-              onPressed: _savingAction ? null : openReviewDialog,
-              icon: const Icon(Icons.rate_review),
-              label: const Text('Escrever review'),
+        ),
+      ],
+    );
+  }
+
+  Widget buildReviews() {
+    if (_loadingReviews) {
+      return Center(
+        child: CircularProgressIndicator(color: _settings.accentColor),
+      );
+    }
+
+    if (_reviews.isEmpty) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: _settings.cardColor,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: _settings.borderColor),
+        ),
+        child: Text(
+          'Nenhuma review ainda. Seja o primeiro!',
+          style: TextStyle(
+            color: _settings.mutedColor,
+            fontSize: 14,
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      children: _reviews.map((r) {
+        return ReviewCardLarge(
+          username: r['username'] ?? '',
+          review: r['review_text'] ?? '',
+          date: _timeAgo(r['created_at']?.toString()),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget buildFriendsPlaying() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: _settings.cardColor,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: _settings.borderColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'FRIENDS PLAYING',
+            style: TextStyle(
+              color: _settings.accentColor,
+              fontWeight: FontWeight.bold,
             ),
           ),
-          const SizedBox(height: 22),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16),
+          const SizedBox(height: 18),
+          Container(
+            padding: const EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: 6,
+            ),
+            decoration: BoxDecoration(
+              color: _settings.accentColor.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: _settings.accentColor.withOpacity(0.3),
+              ),
+            ),
             child: Text(
-              'Reviews da comunidade',
+              'EM BREVE',
               style: TextStyle(
-                color: Color(0xFF39FF14),
+                color: _settings.accentColor,
+                fontSize: 11,
                 fontWeight: FontWeight.bold,
-                fontSize: 22,
+                letterSpacing: 1,
               ),
             ),
           ),
-          const SizedBox(height: 8),
-          if (_loadingReviews)
-            const Padding(
-              padding: EdgeInsets.all(20),
-              child: Center(
-                child: CircularProgressIndicator(color: Color(0xFF39FF14)),
-              ),
-            )
-          else if (_communityReviews.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Text(
-                'Ainda não há reviews para este jogo.',
-                style: TextStyle(color: Colors.white70),
-              ),
-            )
-          else
-            ..._communityReviews.map(buildReviewCard),
-          const SizedBox(height: 24),
+          const SizedBox(height: 12),
+          Text(
+            'Em breve você poderá ver quais amigos estão jogando isso.',
+            style: TextStyle(
+              color: _settings.mutedColor,
+              fontSize: 13,
+              height: 1.5,
+            ),
+          ),
         ],
       ),
     );

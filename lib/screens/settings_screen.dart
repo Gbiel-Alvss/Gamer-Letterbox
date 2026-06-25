@@ -1,217 +1,350 @@
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-import 'login_screen.dart';
-import 'edit_profile_screen.dart';
+
+import '../services/app_settings.dart';
 
 class SettingsScreen extends StatefulWidget {
-  const SettingsScreen({Key? key}) : super(key: key);
+  const SettingsScreen({super.key});
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  final supabase = Supabase.instance.client;
-
-  String? username;
-  String? avatarUrl;
-  bool _loading = true;
+  final _settings = AppSettings();
 
   @override
-  void initState() {
-    super.initState();
-    fetchProfile();
-  }
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: _settings,
+      builder: (context, _) {
+        final bg = _settings.bgColor;
+        final card = _settings.cardColor;
+        final text = _settings.textColor;
+        final muted = _settings.mutedColor;
+        final border = _settings.borderColor;
+        final accent = _settings.accentColor;
 
-  // 🔄 BUSCAR PERFIL
-  Future<void> fetchProfile() async {
-    final user = supabase.auth.currentUser;
-    if (user == null) return;
+        return Scaffold(
+          backgroundColor: bg,
+          body: SafeArea(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
 
-    try {
-      final response = await supabase
-          .from('profiles')
-          .select('username, avatar_url')
-          .eq('id', user.id)
-          .single();
+                // Header
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                  child: Row(
+                    children: [
+                      GestureDetector(
+                        onTap: () => Navigator.pop(context),
+                        child: Icon(Icons.arrow_back, color: text, size: 24),
+                      ),
+                      const SizedBox(width: 16),
+                      Text(
+                        'Configurações',
+                        style: TextStyle(
+                          color: accent,
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
 
-      setState(() {
-        username = response['username'];
-        avatarUrl = response['avatar_url'];
-      });
-    } catch (e) {
-      debugPrint('ERRO PROFILE: $e');
-    } finally {
-      setState(() {
-        _loading = false;
-      });
-    }
-  }
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(20),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
 
-  // 🚪 LOGOUT
-  Future<void> logout() async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        backgroundColor: Colors.grey[900],
-        title: const Text(
-          'Sair da conta',
-          style: TextStyle(color: Color(0xFF39FF14)),
-        ),
-        content: const Text(
-          'Você tem certeza que deseja sair?',
-          style: TextStyle(color: Colors.white70),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text(
-              'Cancelar',
-              style: TextStyle(color: Colors.white70),
+                        // Seção Acessibilidade
+                        Text(
+                          'ACESSIBILIDADE',
+                          style: TextStyle(
+                            color: accent,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 1.5,
+                          ),
+                        ),
+
+                        const SizedBox(height: 12),
+
+                        // Alto Contraste
+                        _buildToggleTile(
+                          icon: Icons.contrast,
+                          title: 'Alto Contraste',
+                          subtitle: 'Fundo branco com texto escuro para melhor leitura',
+                          value: _settings.highContrast,
+                          onChanged: _settings.setHighContrast,
+                          cardColor: card,
+                          textColor: text,
+                          mutedColor: muted,
+                          borderColor: border,
+                          accentColor: accent,
+                        ),
+
+                        const SizedBox(height: 12),
+
+                        // Tamanho de Fonte
+                        _buildFontScaleTile(
+                          cardColor: card,
+                          textColor: text,
+                          mutedColor: muted,
+                          borderColor: border,
+                          accentColor: accent,
+                        ),
+
+                        const SizedBox(height: 32),
+
+                        // Preview
+                        Text(
+                          'PRÉVIA',
+                          style: TextStyle(
+                            color: accent,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 1.5,
+                          ),
+                        ),
+
+                        const SizedBox(height: 12),
+
+                        _buildPreview(
+                          cardColor: card,
+                          textColor: text,
+                          mutedColor: muted,
+                          borderColor: border,
+                          accentColor: accent,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF39FF14),
+        );
+      },
+    );
+  }
+
+  Widget _buildToggleTile({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required bool value,
+    required Function(bool) onChanged,
+    required Color cardColor,
+    required Color textColor,
+    required Color mutedColor,
+    required Color borderColor,
+    required Color accentColor,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: cardColor,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: borderColor),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: accentColor.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(10),
             ),
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text(
-              'Sair',
-              style: TextStyle(color: Colors.black),
+            child: Icon(icon, color: accentColor, size: 20),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    color: textColor,
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  subtitle,
+                  style: TextStyle(
+                    color: mutedColor,
+                    fontSize: 12,
+                    height: 1.4,
+                  ),
+                ),
+              ],
             ),
+          ),
+          const SizedBox(width: 10),
+          Switch(
+            value: value,
+            onChanged: onChanged,
+            activeColor: accentColor,
           ),
         ],
       ),
     );
-
-    if (confirm == true) {
-      await supabase.auth.signOut();
-
-      if (!mounted) return;
-
-      Navigator.pushAndRemoveUntil(
-        context,
-        MaterialPageRoute(builder: (_) => const LoginScreen()),
-        (route) => false,
-      );
-    }
   }
 
-  // 👤 HEADER DO PERFIL
-  Widget buildProfile() {
-    if (_loading) {
-      return const Center(
-        child: CircularProgressIndicator(color: Color(0xFF39FF14)),
-      );
-    }
+  Widget _buildFontScaleTile({
+    required Color cardColor,
+    required Color textColor,
+    required Color mutedColor,
+    required Color borderColor,
+    required Color accentColor,
+  }) {
+    final scale = _settings.fontScale;
+    String scaleLabel = 'Normal';
+    if (scale <= 0.85) scaleLabel = 'Pequeno';
+    else if (scale >= 1.3) scaleLabel = 'Grande';
+    else if (scale >= 1.15) scaleLabel = 'Médio+';
 
-    return Column(
-      children: [
-        Stack(
-          children: [
-            CircleAvatar(
-              radius: 50,
-              backgroundImage: avatarUrl != null
-                  ? NetworkImage(avatarUrl!)
-                  : const NetworkImage(
-                      'https://i.imgur.com/3fJ1P4b.png'),
-            ),
-
-            // ✏️ BOTÃO EDITAR
-            Positioned(
-              bottom: 0,
-              right: 0,
-              child: GestureDetector(
-                onTap: () async {
-                  final updated = await Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => EditProfileScreen(
-                        currentUsername: username ?? '',
-                        currentAvatar: avatarUrl,
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: cardColor,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: borderColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: accentColor.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(Icons.text_fields, color: accentColor, size: 20),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Tamanho da Fonte',
+                      style: TextStyle(
+                        color: textColor,
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
-                  );
-
-                  if (updated == true) {
-                    fetchProfile(); // 🔄 atualiza após edição
-                  }
-                },
-                child: const CircleAvatar(
-                  radius: 16,
-                  backgroundColor: Color(0xFF39FF14),
-                  child: Icon(Icons.edit, size: 16, color: Colors.black),
+                    const SizedBox(height: 3),
+                    Text(
+                      scaleLabel,
+                      style: TextStyle(color: mutedColor, fontSize: 12),
+                    ),
+                  ],
                 ),
               ),
-            ),
-          ],
-        ),
-
-        const SizedBox(height: 12),
-
-        Text(
-          username ?? 'Usuário',
-          style: const TextStyle(
-            color: Color(0xFF39FF14),
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
+            ],
           ),
-        ),
-      ],
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Text('A', style: TextStyle(color: mutedColor, fontSize: 12)),
+              Expanded(
+                child: Slider(
+                  value: scale,
+                  min: 0.85,
+                  max: 1.3,
+                  divisions: 3,
+                  activeColor: accentColor,
+                  inactiveColor: accentColor.withOpacity(0.2),
+                  onChanged: (v) => _settings.setFontScale(
+                    [0.85, 1.0, 1.15, 1.3].reduce(
+                      (a, b) => (a - v).abs() < (b - v).abs() ? a : b,
+                    ),
+                  ),
+                ),
+              ),
+              Text('A', style: TextStyle(color: textColor, fontSize: 18, fontWeight: FontWeight.bold)),
+            ],
+          ),
+        ],
+      ),
     );
   }
 
-  // ⚙️ OPÇÃO (REUTILIZÁVEL)
-  Widget buildOption({
-    required IconData icon,
-    required String title,
-    required VoidCallback onTap,
-    Color? color,
+  Widget _buildPreview({
+    required Color cardColor,
+    required Color textColor,
+    required Color mutedColor,
+    required Color borderColor,
+    required Color accentColor,
   }) {
-    return ListTile(
-      leading: Icon(icon, color: color ?? const Color(0xFF39FF14)),
-      title: Text(
-        title,
-        style: TextStyle(
-          color: color ?? Colors.white,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
-      trailing: const Icon(Icons.arrow_forward_ios, color: Colors.white54),
-      onTap: onTap,
-    );
-  }
+    final scale = _settings.fontScale;
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      appBar: AppBar(
-        title: const Text('Configurações'),
-        backgroundColor: Colors.black,
-        foregroundColor: const Color(0xFF39FF14),
-        elevation: 0,
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: cardColor,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: borderColor),
       ),
-      body: ListView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SizedBox(height: 20),
-
-          // 👤 PERFIL
-          buildProfile(),
-
-          const SizedBox(height: 30),
-
-          const Divider(color: Colors.white24),
-
-          // 🚪 LOGOUT
-          buildOption(
-            icon: Icons.logout,
-            title: 'Sair da conta',
-            color: Colors.redAccent,
-            onTap: logout,
+          Text(
+            'PLAYBOXED',
+            style: TextStyle(
+              color: accentColor,
+              fontSize: 22 * scale,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 1,
+            ),
           ),
-
-          const SizedBox(height: 20),
+          const SizedBox(height: 8),
+          Text(
+            'Exemplo de título de jogo',
+            style: TextStyle(
+              color: textColor,
+              fontSize: 16 * scale,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Texto de descrição e informações secundárias do aplicativo.',
+            style: TextStyle(
+              color: mutedColor,
+              fontSize: 13 * scale,
+              height: 1.5,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            decoration: BoxDecoration(
+              color: accentColor,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(
+              'BOTÃO DE EXEMPLO',
+              style: TextStyle(
+                color: _settings.accentTextColor,
+                fontSize: 13 * scale,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
         ],
       ),
     );
